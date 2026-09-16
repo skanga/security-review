@@ -43,8 +43,23 @@ Local environment: Windows, Python 3.13.7, pytest 9.1.1, Bun 1.3.14.
 
 ## External acceptance still required
 
+### First GitHub matrix attempt
+
+The candidate was committed and pushed to the private repository [skanga/security-review](https://github.com/skanga/security-review). Candidate commit: `a08cc3589aabd9000caac19715b45e84e2c9bd42`.
+
+[Workflow run 35063597036](https://github.com/skanga/security-review/actions/runs/35063597036) was triggered by the push. All 13 jobs failed before test steps started. GitHub's job annotation reports that recent account payments failed or the spending limit needs to be increased. No remote tests or wheel installation checks executed, so this attempt provides no platform acceptance evidence.
+
+After resolving the account's Actions billing/spending restriction, retry the same candidate:
+
+```text
+gh run rerun 35063597036 --repo skanga/security-review
+gh run watch 35063597036 --repo skanga/security-review --exit-status
+```
+
+### Remaining gates
+
 1. Run the committed Windows/Linux/macOS × Python 3.11–3.14 matrix. Only Windows/Python 3.13 has run here. WSL enumeration outside the sandbox found no installed distribution; no macOS runner is available in this session.
 2. Run the pinned Claude runtime conformance cases with deliberately configured authentication and synthetic source, including managed policy and repository instruction isolation. Offline process tests cannot establish runtime isolation or model quality.
 3. Run a GitHub test PR with installation-token permissions to verify the real API source/publication lifecycle. Transport fixtures exercise those contracts locally; no external comment was sent.
 
-No commits, pushes, deployments, paid model reviews or external publication were performed. New native providers and quality comparisons are M2; MCP/framework integration and SARIF are M3.
+The candidate and release-check record have been committed and pushed at the user's request. No deployments, paid model reviews or PR comment publication were performed. New native providers and quality comparisons are M2; MCP/framework integration and SARIF are M3.
