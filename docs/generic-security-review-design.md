@@ -1224,7 +1224,7 @@ Database migrations are versioned and transactional, with a backup/export strate
 
 | Decision | Proposed treatment | Validation needed |
 |---|---|---|
-| Package/executable and supported Python versions | Distribution `security-review-engine`, executable `security-review`; Python 3.11–3.14 selected | Public registry availability and full platform matrix remain release checks |
+| Package/executable and supported Python versions | Distribution `security-review-engine`, executable `security-review`; Python 3.11–3.14 platform matrix passed | Public package registry availability remains unverified |
 | Exact Claude runtime profile | Select a pinned tested range with tool/config/output controls | Live runtime conformance, especially repository config loading and cancellation |
 | Windows/POSIX safe capture implementation | Platform-specific handle logic behind one reader/capture contract | Symlink/reparse race and path-fixture tests on each OS |
 | Git acquisition isolation details | Owned bare stores and restricted command profiles | Hostile Git config/helper/transport fixtures; reject unsupported stronger trust modes |

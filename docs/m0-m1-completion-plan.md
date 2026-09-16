@@ -28,4 +28,4 @@ Malformed reports and schemas; missed coverage; symlink/Windows path escapes; co
 
 ## Delivery record
 
-The implementation sequence above is delivered, including offline acceptance cases, the Action migration, versioned schemas/profiles, clean wheel installation, migration documentation and CI matrix. See [implementation progress](implementation-progress.md) for exact verification. External OS/runtime/GitHub conformance remains an explicit release gate; the local changes are not a claim that those remote checks have already passed.
+The implementation sequence above is delivered, including offline acceptance cases, the Action migration, versioned schemas/profiles, clean wheel installation, migration documentation and CI matrix. The full Windows/Linux/macOS × Python 3.11–3.14 matrix has passed. See [implementation progress](implementation-progress.md) for exact verification. Live runtime/GitHub conformance remains an explicit release gate.

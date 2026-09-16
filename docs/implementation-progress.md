@@ -41,25 +41,29 @@ Local environment: Windows, Python 3.13.7, pytest 9.1.1, Bun 1.3.14.
 - Published JSON Schemas passed Draft 2020-12 schema validation; generated Action reports were checked against the report schema. `git diff --check` passed.
 - A fresh reviewer identified Action import shadowing, Git pathspec leakage, missing mode-only scope, incomplete cache identity, installation-token publication identity, artifact links, PR comparison mismatch, and context cleanup issues. Regression cases cover their corrections.
 
-## External acceptance still required
+## External acceptance record
 
 ### First GitHub matrix attempt
 
-The candidate was committed and pushed to the private repository [skanga/security-review](https://github.com/skanga/security-review). Candidate commit: `a08cc3589aabd9000caac19715b45e84e2c9bd42`.
+The candidate was initially committed and pushed to the private repository [skanga/security-review](https://github.com/skanga/security-review). Candidate commit: `a08cc3589aabd9000caac19715b45e84e2c9bd42`. The repository is now public at the user's request.
 
-[Workflow run 35063597036](https://github.com/skanga/security-review/actions/runs/35063597036) was triggered by the push. All 13 jobs failed before test steps started. GitHub's job annotation reports that recent account payments failed or the spending limit needs to be increased. No remote tests or wheel installation checks executed, so this attempt provides no platform acceptance evidence.
+[Workflow run 35063597036, attempt 1](https://github.com/skanga/security-review/actions/runs/35063597036/attempts/1) was triggered by the push. All 13 jobs failed before test steps started because of an account billing/spending restriction. Making the repository public allowed the jobs to start on the next attempt.
 
-After resolving the account's Actions billing/spending restriction, retry the same candidate:
+### Platform gate passed
 
-```text
-gh run rerun 35063597036 --repo skanga/security-review
-gh run watch 35063597036 --repo skanga/security-review --exit-status
-```
+[Workflow run 35064408314](https://github.com/skanga/security-review/actions/runs/35064408314) **passed all 13 jobs** for commit `3b8a212a57be4c3a030d8fdc1b4037f5e7d2ddda`:
+
+- Windows, Linux and macOS, each on Python 3.11, 3.12, 3.13 and 3.14.
+- The full offline Python suite, wheel build and isolated wheel installation in every Python job.
+- The legacy publisher's 11 Bun tests.
+
+The Python suite now contains 289 tests. Representative Python 3.11 logs report 289 passed on each OS, with no skips: Linux 30.14 seconds, Windows 72.17 seconds, macOS 107.34 seconds.
+
+Real runner failures led to corrections before this passing run: create the test cache parent on fresh checkouts; remove a legacy offline test's dependence on an installed Claude CLI; reject a subdirectory that would silently select its parent repository; and report output-limit violations consistently across process completion timings. Four new source-boundary regressions cover all local modes. The earlier fixtures and policy assertions remain enabled.
 
 ### Remaining gates
 
-1. Run the committed Windows/Linux/macOS × Python 3.11–3.14 matrix. Only Windows/Python 3.13 has run here. WSL enumeration outside the sandbox found no installed distribution; no macOS runner is available in this session.
-2. Run the pinned Claude runtime conformance cases with deliberately configured authentication and synthetic source, including managed policy and repository instruction isolation. Offline process tests cannot establish runtime isolation or model quality.
-3. Run a GitHub test PR with installation-token permissions to verify the real API source/publication lifecycle. Transport fixtures exercise those contracts locally; no external comment was sent.
+1. Run the pinned Claude runtime conformance cases with deliberately configured authentication and synthetic source, including managed policy and repository instruction isolation. Offline process tests cannot establish runtime isolation or model quality.
+2. Run a GitHub test PR with installation-token permissions to verify the real API source/publication lifecycle. Transport fixtures exercise those contracts locally; no external comment was sent.
 
 The candidate and release-check record have been committed and pushed at the user's request. No deployments, paid model reviews or PR comment publication were performed. New native providers and quality comparisons are M2; MCP/framework integration and SARIF are M3.

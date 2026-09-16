@@ -651,7 +651,7 @@ This register records resolved implementation choices alongside decisions still 
 | ID | Decision | Proposed position | Needed before |
 |---|---|---|---|
 | DEC-01 | Package/executable name | Implemented distribution `security-review-engine`, executable `security-review`; public registry availability remains unverified | Public package publication |
-| DEC-02 | Supported Python versions | Selected Python 3.11–3.14; Windows/Linux/macOS matrix configured, Windows 3.13 verified locally | Full matrix before M1 release |
+| DEC-02 | Supported Python versions | Python 3.11–3.14; full Windows/Linux/macOS test and wheel-installation matrix passed; see implementation progress | Resolved for M1 core |
 | DEC-03 | Default policy and blocking threshold | Decided: HIGH findings only block CI; reporting and confidence policy remain explicit | Confirmed 2026-09-15 |
 | DEC-04 | First two native providers and model configurations | Decided: OpenAI API-compatible endpoints and Claude; configurable model IDs, capabilities verified per endpoint/model | Confirmed 2026-09-15 |
 | DEC-05 | Exact benchmark corpus and quality thresholds | Adopt section 16 proposals as planning targets, finalize before tuning | M2 evaluation |

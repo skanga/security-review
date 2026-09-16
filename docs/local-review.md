@@ -135,7 +135,7 @@ Non-PR Action invocations fail with an explicit unsupported-event result; use th
 
 | Component | Requirements | Verification status |
 |---|---|---|
-| Core, CLI, local source, persistence | Python 3.11–3.14; Git for local snapshots; no provider SDK | Windows/Python 3.13 offline acceptance verified; Linux/macOS and remaining Python versions await CI |
+| Core, CLI, local source, persistence | Python 3.11–3.14; Git for local snapshots; no provider SDK | Windows/Linux/macOS × Python 3.11–3.14 offline suite and clean wheel installation passed; see the release record |
 | Claude Code investigation | Runtime >=2.1.248,<3, API key, cloud processing allowed; Action pins 2.1.248 | Command, environment, result and process contracts tested offline; live runtime/managed-policy isolation remains unverified |
 | Claude API validation | Optional `claude` dependencies, API key, selected accessible Claude model | Fresh-context evidence and failure contracts tested offline; live model access/quality remains unverified |
 | GitHub source/publication | Repository/PR read access; PR write access for publication | Paginated transport, stale-head and author ownership fixtures pass; real installation-token lifecycle awaits a test PR |
@@ -153,4 +153,4 @@ Claude runtime availability is an additional platform constraint; core support d
 
 Source bounds are 1 MiB per file, 32 MiB per captured side/content budget, 10,000 files and 8 MiB diff/transport responses. Repository-reader inventory/read/search/diff methods provide bounded pages. A large compatibility assignment is provided as an owned inert file. Validation currently requires its base/head/diff evidence within 1 MiB; oversized required evidence yields an incomplete result. Native context planning and token/cost ceilings are M2 work.
 
-This release candidate is for trusted repositories and hosts. Runtime/managed-policy isolation and live detection quality are not certified by mocked tests. Linux/macOS and the declared Python-version matrix require successful CI runs before M1 release acceptance. Native provider independence, MCP/framework integrations, and SARIF remain M2/M3.
+This release candidate is for trusted repositories and hosts. The declared OS/Python matrix has passed. Runtime/managed-policy isolation, live detection quality and real GitHub publication remain unverified by the offline suite. Native provider independence, MCP/framework integrations, and SARIF remain M2/M3. See [implementation progress](implementation-progress.md) for exact commits and evidence.

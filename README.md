@@ -23,7 +23,7 @@ security-review scan --pr owner/repo#123 --config /trusted/review.toml
 security-review publish --report review.json --pr owner/repo#123
 ```
 
-Use this release candidate with trusted repositories and hosts. Reviewed source is sent to the configured provider. Runtime isolation and cross-platform release acceptance remain subject to the checks in [implementation status](docs/implementation-progress.md).
+Use this release candidate with trusted repositories and hosts. Reviewed source is sent to the configured provider. The cross-platform core matrix has passed; live runtime isolation and GitHub integration remain subject to the checks in [implementation status](docs/implementation-progress.md).
 
 ## CI behavior
 
