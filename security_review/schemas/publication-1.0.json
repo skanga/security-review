@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PublicationResult 1.0",
+  "type": "object",
+  "required": [
+    "target",
+    "run_id",
+    "snapshot_id",
+    "status",
+    "created",
+    "updated",
+    "skipped",
+    "errors"
+  ],
+  "properties": {
+    "status": {
+      "enum": [
+        "published",
+        "stale",
+        "failed"
+      ]
+    }
+  }
+}

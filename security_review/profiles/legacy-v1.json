@@ -1,0 +1,1 @@
+{"profile":"legacy","version":"1","minimum_severity":"MEDIUM","minimum_confidence":0.8,"validation_required":true,"exclude_paths":[],"exclude_categories":["denial_of_service","rate_limiting","resource_leak","open_redirect","regex_injection"],"suppressions":[],"source":"corrected-legacy-v1"}

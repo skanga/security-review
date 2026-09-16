@@ -88,7 +88,13 @@ class HardExclusionRules:
         Returns:
             Exclusion reason if finding should be excluded, None otherwise
         """
-        # Check if finding is in a Markdown file
+        # Structured categories take precedence over legacy wording heuristics.
+        # Mixed-impact findings must not disappear because their text says "DoS".
+        category = finding.get('category')
+        if category:
+            from security_review.policy import LEGACY_CATEGORIES
+            return f"Legacy category scope: {category}" if category in LEGACY_CATEGORIES else None
+        # Uncategorized records retain the frozen compatibility profile only.
         file_path = finding.get('file', '')
         if file_path.lower().endswith('.md'):
             return "Finding in Markdown documentation file"
@@ -130,26 +136,9 @@ class HardExclusionRules:
             if pattern.search(combined_text):
                 return "Regex injection finding (not applicable)"
         
-        # Check memory safety patterns - exclude if NOT in C/C++ files
-        c_cpp_extensions = {'.c', '.cc', '.cpp', '.h'}
-        file_ext = ''
-        if '.' in file_path:
-            file_ext = f".{file_path.lower().split('.')[-1]}"
-        
-        # If file doesn't have a C/C++ extension (including no extension), exclude memory safety findings
-        if file_ext not in c_cpp_extensions:
-            for pattern in cls._MEMORY_SAFETY_PATTERNS:
-                if pattern.search(combined_text):
-                    return "Memory safety finding in non-C/C++ code (not applicable)"
-        
-        # Check SSRF patterns - exclude if in HTML files only
-        html_extensions = {'.html'}
-        
-        # If file has HTML extension, exclude SSRF findings
-        if file_ext in html_extensions:
-            for pattern in cls._SSRF_PATTERNS:
-                if pattern.search(combined_text):
-                    return "SSRF finding in HTML file (not applicable to client-side code)"
+        # Language/extension is not evidence that native or FFI memory issues
+        # are impossible. Leave these findings for evidence-based validation.
+        file_ext = '.' + file_path.rsplit('.', 1)[-1].lower() if '.' in file_path else ''
         
         return None
 
@@ -266,10 +255,13 @@ class FindingsFilter:
                     finding, pr_context, self.custom_filtering_instructions
                 )
                 
-                if success and analysis_result:
+                if (success and isinstance(analysis_result, dict)
+                        and type(analysis_result.get('keep_finding')) is bool
+                        and type(analysis_result.get('confidence_score')) in (int, float)
+                        and 1 <= analysis_result['confidence_score'] <= 10):
                     # Process Claude's analysis for single finding
-                    confidence = analysis_result.get('confidence_score', 10.0)
-                    keep_finding = analysis_result.get('keep_finding', True)
+                    confidence = analysis_result['confidence_score']
+                    keep_finding = analysis_result['keep_finding']
                     justification = analysis_result.get('justification', '')
                     exclusion_reason = analysis_result.get('exclusion_reason')
                     
@@ -299,7 +291,8 @@ class FindingsFilter:
                     logger.warning(f"Claude API call failed for finding {orig_idx}: {error_msg}")
                     enriched_finding = finding.copy()
                     enriched_finding['_filter_metadata'] = {
-                        'confidence_score': 10.0,  # Default high confidence
+                        'confidence_score': None,
+                        'validation_status': 'unvalidated',
                         'justification': f'Claude API failed: {error_msg}',
                     }
                     findings_after_claude.append(enriched_finding)
@@ -309,7 +302,8 @@ class FindingsFilter:
             for orig_idx, finding in findings_after_hard:
                 enriched_finding = finding.copy()
                 enriched_finding['_filter_metadata'] = {
-                    'confidence_score': 10.0,  # Default high confidence
+                    'confidence_score': None,
+                    'validation_status': 'unvalidated',
                     'justification': 'Claude filtering disabled',
                 }
                 findings_after_claude.append(enriched_finding)

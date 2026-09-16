@@ -1,0 +1,11 @@
+{
+  "version": "corrected-legacy-v1",
+  "cases": [
+    {"name": "completed-negative", "report": {"findings": [], "analysis_summary": {"review_completed": true}}, "completed": true},
+    {"name": "completed-high", "report": {"findings": [{"file": "app.py", "line": 1, "severity": "HIGH", "description": "New missing authorization guard"}], "analysis_summary": {"review_completed": true}}, "completed": true},
+    {"name": "incomplete-negative", "report": {"findings": [], "analysis_summary": {"review_completed": false}}, "completed": false},
+    {"name": "error-envelope", "report": {"error": "provider failed", "findings": [], "analysis_summary": {"review_completed": true}}, "completed": false},
+    {"name": "invalid-findings", "report": {"findings": [null], "analysis_summary": {"review_completed": true}}, "completed": false}
+  ],
+  "slash_command": {"execution": "host-owned", "machine_report_contract": false, "comparison": "policy-only; output and runtime are not equivalent to engine execution"}
+}

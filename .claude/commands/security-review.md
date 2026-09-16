@@ -145,7 +145,7 @@ FALSE POSITIVE FILTERING:
 > 7. A lack of hardening measures. Code is not expected to implement all security best practices, only flag concrete vulnerabilities.
 > 8. Race conditions or timing attacks that are theoretical rather than practical issues. Only report a race condition if it is concretely problematic.
 > 9. Vulnerabilities related to outdated third-party libraries. These are managed separately and should not be reported here.
-> 10. Memory safety issues such as buffer overflows or use-after-free-vulnerabilities are impossible in rust. Do not report memory safety issues in rust or any other memory safe languages.
+> 10. Assess memory safety findings from concrete evidence, including unsafe Rust, FFI, and native dependencies. Language or file extension alone is not an exclusion.
 > 11. Files that are only unit tests or only used as part of running tests.
 > 12. Log spoofing concerns. Outputting un-sanitized user input to logs is not a vulnerability.
 > 13. SSRF vulnerabilities that only control the path. SSRF is only a concern if it can control the host or protocol.

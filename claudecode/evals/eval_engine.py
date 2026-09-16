@@ -6,11 +6,14 @@ import subprocess
 import shutil
 import time
 import threading
+import uuid
+import re
+import base64
 from typing import Dict, Any, Optional, Tuple, List
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-from ..json_parser import parse_json_with_fallbacks
+from ..json_parser import parse_json_with_fallbacks, is_completed_report
 
 # Timeout constants (in seconds)
 TIMEOUT_SHORT = 10
@@ -66,7 +69,8 @@ class EvaluationEngine:
         # Use ~/code/audit as base directory like pr_audit does
         if work_dir is None:
             work_dir = os.path.expanduser("~/code/audit")
-        self.work_dir = work_dir
+        self.work_dir = str(Path(work_dir).resolve())
+        self._owned_worktrees = {}
         Path(self.work_dir).mkdir(parents=True, exist_ok=True)
         
         self.verbose = verbose
@@ -87,7 +91,6 @@ class EvaluationEngine:
                                       capture_output=True, text=True, timeout=TIMEOUT_GIT_OPERATION)
                 if result.returncode == 0:
                     self.github_token = result.stdout.strip()
-                    os.environ['GITHUB_TOKEN'] = self.github_token
                     self.log("Retrieved GitHub token from gh CLI")
             except (subprocess.SubprocessError, FileNotFoundError) as e:
                 self.log(f"Could not retrieve GitHub token from gh CLI: {e}")
@@ -114,87 +117,13 @@ class EvaluationEngine:
             return self._repo_locks[repo_name]
     
     def _clean_worktrees(self, repo_path: str, branch_pattern: str = None) -> None:
-        """Clean up locked or stale worktrees and remove untracked branches.
-        
-        Args:
-            repo_path: Path to the main repository
-            branch_pattern: Optional pattern to match branches for cleanup
+        """Never infer ownership from branch names or Git's locked flag.
+
+        Only _cleanup_worktree may release resources recorded by this instance.
+        Orphans from earlier processes require explicit operator recovery.
         """
-        if not os.path.exists(repo_path):
-            return
-            
-        try:
-            # First, prune worktrees to clean up stale entries
-            subprocess.run(['git', '-C', repo_path, 'worktree', 'prune'], 
-                          check=False, capture_output=True, timeout=TIMEOUT_SHORT)
-            
-            # List all worktrees
-            result = subprocess.run(['git', '-C', repo_path, 'worktree', 'list', '--porcelain'],
-                                   capture_output=True, text=True, check=True, timeout=TIMEOUT_SHORT)
-            
-            worktrees = []
-            current_worktree = {}
-            for line in result.stdout.strip().split('\n'):
-                if not line:
-                    if current_worktree:
-                        worktrees.append(current_worktree)
-                        current_worktree = {}
-                elif line.startswith('worktree '):
-                    current_worktree['path'] = line[9:]
-                elif line.startswith('branch '):
-                    current_worktree['branch'] = line[7:]
-                elif line == 'locked':
-                    current_worktree['locked'] = True
-            
-            if current_worktree:
-                worktrees.append(current_worktree)
-            
-            # Remove locked or matching worktrees
-            for wt in worktrees:
-                if wt.get('path') == repo_path:
-                    continue  # Skip main worktree
-                    
-                should_remove = False
-                if wt.get('locked'):
-                    self.log(f"Found locked worktree: {wt.get('path')}")
-                    should_remove = True
-                elif branch_pattern and 'branch' in wt:
-                    branch_name = wt['branch'].replace('refs/heads/', '')
-                    if branch_pattern in branch_name:
-                        self.log(f"Found matching worktree for cleanup: {wt.get('path')} (branch: {branch_name})")
-                        should_remove = True
-                
-                if should_remove:
-                    try:
-                        # Force remove the worktree
-                        subprocess.run(['git', '-C', repo_path, 'worktree', 'remove', '--force', wt['path']],
-                                      check=False, capture_output=True, timeout=TIMEOUT_SHORT)
-                        # Also try to remove the directory if it still exists
-                        if os.path.exists(wt['path']):
-                            shutil.rmtree(wt['path'], ignore_errors=True)
-                    except Exception as e:
-                        self.log(f"Error removing worktree {wt.get('path')}: {e}")
-            
-            # Clean up branches
-            if branch_pattern:
-                # Get all local branches
-                result = subprocess.run(['git', '-C', repo_path, 'branch', '--list'],
-                                       capture_output=True, text=True, check=True, timeout=TIMEOUT_SHORT)
-                
-                for line in result.stdout.strip().split('\n'):
-                    branch = line.strip().lstrip('* ')
-                    if branch_pattern in branch:
-                        try:
-                            # Delete the branch
-                            subprocess.run(['git', '-C', repo_path, 'branch', '-D', branch],
-                                          check=False, capture_output=True, timeout=TIMEOUT_SHORT)
-                            self.log(f"Deleted branch: {branch}")
-                        except Exception as e:
-                            self.log(f"Error deleting branch {branch}: {e}")
-            
-        except Exception as e:
-            self.log(f"Error during worktree cleanup: {e}")
-    
+        return
+
     def _get_eval_branch_name(self, test_case: EvalCase) -> str:
         """Generate a branch name for evaluation.
         
@@ -206,7 +135,7 @@ class EvaluationEngine:
         """
         # Create a safe branch name from repo and PR
         safe_repo = test_case.repo_name.replace('/', '-').replace('.', '-')
-        timestamp = time.strftime('%Y%m%d-%H%M%S')
+        timestamp = time.strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:12]
         return f"eval-pr-{safe_repo}-{test_case.pr_number}-{timestamp}"
     
     def _setup_repository(self, test_case: EvalCase) -> Tuple[bool, str, str]:
@@ -219,6 +148,8 @@ class EvaluationEngine:
             Tuple of (success, worktree_path, error_message)
         """
         repo_name = test_case.repo_name
+        if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo_name):
+            raise ValueError('Invalid GitHub repository')
         pr_number = test_case.pr_number
         
         # Create base path for this repository
@@ -227,20 +158,24 @@ class EvaluationEngine:
         
         # Get lock for this repository
         repo_lock = self._get_repo_lock(repo_name)
+        git_env = {key: value for key, value in os.environ.items() if not key.upper().startswith('GIT_')}
+        git_env['GIT_TERMINAL_PROMPT'] = '0'
+        if self.github_token:
+            authorization = base64.b64encode(('x-access-token:' + self.github_token).encode()).decode()
+            git_env.update(GIT_CONFIG_COUNT='1', GIT_CONFIG_KEY_0='http.https://github.com/.extraheader',
+                           GIT_CONFIG_VALUE_0='AUTHORIZATION: basic ' + authorization)
         
         with repo_lock:
             # Clone or update the base repository
             if not os.path.exists(base_repo_path):
                 self.log(f"Cloning {repo_name} to {base_repo_path}")
                 clone_url = f"https://github.com/{repo_name}.git"
-                if self.github_token:
-                    clone_url = f"https://{self.github_token}@github.com/{repo_name}.git"
                 
                 try:
                     subprocess.run(['git', 'clone', '--filter=blob:none', clone_url, base_repo_path],
-                                 check=True, capture_output=True, timeout=TIMEOUT_CLONE)
+                                 check=True, capture_output=True, timeout=TIMEOUT_CLONE, env=git_env)
                 except subprocess.CalledProcessError as e:
-                    error_msg = f"Failed to clone repository: {e.stderr.decode()}"
+                    error_msg = "Failed to clone repository; check permissions and network"
                     self.log(error_msg)
                     return False, "", error_msg
             
@@ -250,13 +185,14 @@ class EvaluationEngine:
             
             # Create worktree for this specific evaluation
             eval_branch = self._get_eval_branch_name(test_case)
-            worktree_path = os.path.join(self.work_dir, f"{safe_repo_name}_pr{pr_number}_{int(time.time())}")
+            worktree_path = os.path.join(self.work_dir, f"{safe_repo_name}_pr{pr_number}_{uuid.uuid4().hex}")
             
+            self._owned_worktrees[str(Path(worktree_path).absolute())] = (base_repo_path, eval_branch)
             try:
                 # Fetch the PR
                 self.log(f"Fetching PR #{pr_number} from {repo_name}")
                 subprocess.run(['git', '-C', base_repo_path, 'fetch', 'origin', f'pull/{pr_number}/head'],
-                             check=True, capture_output=True, timeout=TIMEOUT_FETCH)
+                             check=True, capture_output=True, timeout=TIMEOUT_FETCH, env=git_env)
                 
                 # Create new worktree with PR changes
                 self.log(f"Creating worktree at {worktree_path}")
@@ -267,53 +203,28 @@ class EvaluationEngine:
                 return True, worktree_path, ""
                 
             except subprocess.CalledProcessError as e:
-                error_msg = f"Failed to set up worktree: {e.stderr.decode()}"
+                error_msg = "Failed to set up owned evaluation worktree"
                 self.log(error_msg)
                 
-                # Clean up failed worktree if it exists
-                if os.path.exists(worktree_path):
-                    shutil.rmtree(worktree_path, ignore_errors=True)
-                
-                # Try to remove from git worktree list
-                try:
-                    subprocess.run(['git', '-C', base_repo_path, 'worktree', 'remove', '--force', worktree_path],
-                                 check=False, capture_output=True, timeout=TIMEOUT_SHORT)
-                except Exception:
-                    pass
-                
+                # Preserve failed owned worktree for explicit recovery; never delete unknown paths.
+
                 return False, "", error_msg
     
     def _cleanup_worktree(self, test_case: EvalCase, worktree_path: str) -> None:
-        """Clean up a worktree after evaluation.
-        
-        Args:
-            test_case: Test case that was evaluated
-            worktree_path: Path to the worktree
-        """
-        if not os.path.exists(worktree_path):
+        path = Path(worktree_path).absolute()
+        owned = self._owned_worktrees.get(str(path))
+        root = Path(self.work_dir).resolve()
+        if not owned or path.is_symlink() or not path.resolve().is_relative_to(root) or path.resolve() == root:
             return
-            
-        repo_name = test_case.repo_name
-        safe_repo_name = repo_name.replace('/', '_')
-        base_repo_path = os.path.join(self.work_dir, safe_repo_name)
-        
-        repo_lock = self._get_repo_lock(repo_name)
-        
-        with repo_lock:
-            try:
-                # Remove the worktree
-                subprocess.run(['git', '-C', base_repo_path, 'worktree', 'remove', '--force', worktree_path],
-                             check=False, capture_output=True, timeout=TIMEOUT_WORKTREE)
-                
-                # Also remove directory if it still exists
-                if os.path.exists(worktree_path):
-                    shutil.rmtree(worktree_path, ignore_errors=True)
-                    
-                self.log(f"Cleaned up worktree: {worktree_path}")
-                
-            except Exception as e:
-                self.log(f"Error cleaning up worktree: {e}")
-    
+        base_repo_path, branch = owned
+        with self._get_repo_lock(test_case.repo_name):
+            result = subprocess.run(['git', '-C', base_repo_path, 'worktree', 'remove', '--force', str(path)],
+                                    capture_output=True, check=False, timeout=TIMEOUT_WORKTREE)
+            if result.returncode == 0:
+                subprocess.run(['git', '-C', base_repo_path, 'branch', '-D', branch],
+                               capture_output=True, check=False, timeout=TIMEOUT_SHORT)
+                self._owned_worktrees.pop(str(path), None)
+
     def run_evaluation(self, test_case: EvalCase) -> EvalResult:
         """Run security evaluation on a single PR.
         
@@ -455,6 +366,8 @@ class EvaluationEngine:
                 self.log(f"Error output: {error_output[:500]}...")
                 return False, output, None, f"Unexpected exit code {result.returncode}: {error_output[:200]}"
             
+            if not is_completed_report(parsed_results):
+                return False, output, parsed_results, "Invalid, failed, or incomplete security report"
             return True, output, parsed_results, None
             
         except subprocess.TimeoutExpired:

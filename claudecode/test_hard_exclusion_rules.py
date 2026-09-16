@@ -333,7 +333,7 @@ class TestHardExclusionRules:
         assert "DOS/resource exhaustion" in reason
     
     def test_memory_safety_exclusion_non_cpp_files(self):
-        """Test that memory safety issues are excluded in non-C/C++ files."""
+        """Memory safety claims require evidence even outside C/C++ files."""
         memory_safety_findings = [
             {
                 "title": "Buffer overflow vulnerability",
@@ -364,8 +364,7 @@ class TestHardExclusionRules:
         
         for finding in memory_safety_findings:
             reason = HardExclusionRules.get_exclusion_reason(finding)
-            assert reason is not None
-            assert "Memory safety finding in non-C/C++ code" in reason
+            assert reason is None  # Language/extension alone cannot rule out native or FFI issues.
     
     def test_memory_safety_not_excluded_cpp_files(self):
         """Test that memory safety issues are NOT excluded in C/C++ files."""
@@ -413,8 +412,7 @@ class TestHardExclusionRules:
         
         for finding in findings:
             reason = HardExclusionRules.get_exclusion_reason(finding)
-            assert reason is not None
-            assert "Memory safety finding in non-C/C++ code" in reason
+            assert reason is None  # Language/extension alone cannot rule out native or FFI issues.
     
     def test_memory_safety_no_file_extension(self):
         """Test handling of files without extensions."""
@@ -433,6 +431,5 @@ class TestHardExclusionRules:
         
         for finding in findings:
             reason = HardExclusionRules.get_exclusion_reason(finding)
-            # Should be excluded since they're not C/C++ files
-            assert reason is not None
-            assert "Memory safety finding in non-C/C++ code" in reason
+            # Missing extensions do not establish that native memory issues are impossible.
+            assert reason is None  # Language/extension alone cannot rule out native or FFI issues.

@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReviewRequest 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "repository"
+  ],
+  "properties": {
+    "repository": {
+      "type": "string"
+    },
+    "base": {
+      "type": "string"
+    },
+    "head": {
+      "type": "string"
+    },
+    "comparison": {
+      "enum": [
+        "merge_base",
+        "direct"
+      ]
+    },
+    "model": {},
+    "timeout_seconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "blocking_severities": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "HIGH",
+          "MEDIUM",
+          "LOW",
+          "CRITICAL"
+        ]
+      }
+    },
+    "mode": {
+      "enum": [
+        "revisions",
+        "staged",
+        "unstaged",
+        "working_tree"
+      ]
+    },
+    "include_untracked": {
+      "type": "boolean"
+    },
+    "policy": {
+      "type": "object"
+    },
+    "backend": {},
+    "validator": {},
+    "validation_model": {},
+    "cloud_allowed": {
+      "type": "boolean"
+    },
+    "denied_paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "instructions": {},
+    "validation_instructions": {},
+    "instructions_mode": {},
+    "config_source": {},
+    "schema_version": {
+      "const": "1.0"
+    },
+    "cache_dir": {},
+    "no_cache": {
+      "type": "boolean"
+    },
+    "pr": {}
+  }
+}

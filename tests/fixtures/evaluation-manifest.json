@@ -1,0 +1,33 @@
+{
+  "case_id": "authorization-guard-removal-001",
+  "license": "MIT",
+  "source": {
+    "generator": "tests/evaluation_fixture.py",
+    "base_commit": "e90864d760dc030912c9024624fc327d850d451a",
+    "head_commit": "2ce879561e00bd821bed558f924e6d858792b256",
+    "comparison": "direct"
+  },
+  "policy": {
+    "profile": "generic",
+    "version": "1",
+    "blocking_severities": [
+      "HIGH"
+    ]
+  },
+  "expected_findings": [
+    {
+      "category": "authorization_bypass",
+      "severity": "HIGH",
+      "file": "app.py",
+      "side": "head",
+      "acceptable_lines": [
+        2
+      ],
+      "evidence_notes": "Guard removed in this change; record value becomes accessible without permission check"
+    }
+  ],
+  "negative_expectations": [
+    "No finding in a completed base-versus-base comparison"
+  ],
+  "purpose": "Offline contract and location replay; not a measured model-quality benchmark"
+}

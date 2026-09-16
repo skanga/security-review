@@ -4,7 +4,7 @@ import os
 import json
 import time
 from typing import Dict, Any, Tuple, Optional
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from anthropic import Anthropic
 
@@ -36,7 +36,7 @@ class ClaudeAPIClient:
         """
         self.model = model or DEFAULT_CLAUDE_MODEL
         self.timeout_seconds = timeout_seconds or DEFAULT_TIMEOUT_SECONDS
-        self.max_retries = max_retries or DEFAULT_MAX_RETRIES
+        self.max_retries = DEFAULT_MAX_RETRIES if max_retries is None else max_retries
         
         # Get API key from environment or parameter
         self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
@@ -47,7 +47,7 @@ class ClaudeAPIClient:
             )
         
         # Initialize Anthropic client
-        self.client = Anthropic(api_key=self.api_key)
+        self.client = Anthropic(api_key=self.api_key, max_retries=0)
         logger.info("Claude API client initialized successfully")
     
     def validate_api_access(self) -> Tuple[bool, str]:
@@ -59,7 +59,7 @@ class ClaudeAPIClient:
         try:
             # Simple test call to verify API access
             self.client.messages.create(
-                model="claude-3-5-haiku-20241022",
+                model=self.model,
                 max_tokens=10,
                 messages=[{"role": "user", "content": "Hello"}],
                 timeout=10
@@ -67,7 +67,7 @@ class ClaudeAPIClient:
             logger.info("Claude API access validated successfully")
             return True, ""
         except Exception as e:
-            error_msg = str(e)
+            error_msg = type(e).__name__
             logger.error(f"Claude API validation failed: {error_msg}")
             return False, f"API validation failed: {error_msg}"
     
@@ -122,8 +122,8 @@ class ClaudeAPIClient:
                 
             except Exception as e:
                 error_msg = str(e)
-                last_error = error_msg
-                logger.error(f"Claude API call failed: {error_msg}")
+                last_error = type(e).__name__
+                logger.error("Claude API call failed (%s)", type(e).__name__)
                 
                 # Check if it's a rate limit error
                 if "rate limit" in error_msg.lower() or "429" in error_msg:
@@ -180,8 +180,8 @@ class ClaudeAPIClient:
                 return False, {}, "Failed to parse JSON response"
                 
         except Exception as e:
-            logger.exception(f"Error during single finding security analysis: {str(e)}")
-            return False, {}, f"Single finding security analysis failed: {str(e)}"
+            logger.error("Error during single finding security analysis (%s)", type(e).__name__)
+            return False, {}, f"Single finding security analysis failed: {type(e).__name__}"
 
     
     def _generate_system_prompt(self) -> str:
@@ -250,7 +250,7 @@ File Content ({file_path}): Error reading file - {error}
 7. A lack of hardening measures. Code is not expected to implement all security best practices, just avoid obvious vulnerabilities.
 8. Race conditions or timing attacks that are theoretical rather than practical issues. Only report a race condition if it is extremely problematic.
 9. Vulnerabilities related to outdated third-party libraries. These are managed separately and should not be reported here.
-10. Memory safety issues such as buffer overflows or use-after-free-vulnerabilities are impossible in rust. Do not report memory safety issues in rust code.
+10. Assess memory safety findings from concrete evidence. Rust unsafe code, FFI, and native dependencies can introduce memory vulnerabilities; language or file extension alone is not an exclusion.
 11. Files that are only unit tests or only used as part of running tests.
 12. Log spoofing concerns. Outputing un-sanitized user input to logs is not a vulnerability.
 13. SSRF vulnerabilities that only control the path. SSRF is only a concern if it can control the host or protocol.
@@ -320,16 +320,24 @@ Respond with EXACTLY this JSON structure (no markdown, no code blocks):
             Tuple of (success, formatted_content, error_message)
         """
         try:
-            # Check if REPO_PATH is set and use it as base path
-            repo_path = os.environ.get('REPO_PATH')
-            if repo_path:
-                # Convert file_path to Path and check if it's absolute
-                path = Path(file_path)
-                if not path.is_absolute():
-                    # Make it relative to REPO_PATH
-                    path = Path(repo_path) / file_path
-            else:
-                path = Path(file_path)
+            root = Path(os.environ.get('REPO_PATH') or Path.cwd()).resolve()
+            # Findings contain repository-relative paths, including on POSIX hosts
+            # reviewing malicious Windows path forms.
+            if (not isinstance(file_path, str) or not file_path
+                    or PureWindowsPath(file_path).drive
+                    or file_path.startswith(('/', '\\'))
+                    or '\\' in file_path or ':' in file_path
+                    or '..' in file_path.split('/')):
+                return False, "", "Evidence path must be repository-relative"
+            path = root / file_path
+            for parent in (path, *path.parents):
+                if parent == root:
+                    break
+                if parent.is_symlink() or (hasattr(parent, 'is_junction') and parent.is_junction()):
+                    return False, "", "Evidence links are not allowed"
+            path = path.resolve()
+            if not path.is_relative_to(root):
+                return False, "", "Evidence path is outside repository"
             
             if not path.exists():
                 return False, "", f"File not found: {path}"
@@ -337,14 +345,16 @@ Respond with EXACTLY this JSON structure (no markdown, no code blocks):
             if not path.is_file():
                 return False, "", f"Path is not a file: {path}"
             
-            # Read file with error handling for encoding issues
+            # Bounded byte reads prevent oversized evidence from exhausting memory.
+            limit = 1024 * 1024
+            with path.open('rb') as source:
+                data = source.read(limit + 1)
+            if len(data) > limit:
+                return False, "", "Evidence exceeds the 1 MiB limit"
             try:
-                with open(path, 'r', encoding='utf-8') as f:
-                    content = f.read()
+                content = data.decode('utf-8')
             except UnicodeDecodeError:
-                # Try with latin-1 encoding as fallback
-                with open(path, 'r', encoding='latin-1') as f:
-                    content = f.read()
+                content = data.decode('latin-1')
             
             return True, content, ""
             

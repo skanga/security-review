@@ -10,6 +10,12 @@ from claudecode.evals.eval_engine import (
 )
 
 
+@pytest.fixture(autouse=True)
+def synthetic_github_token(monkeypatch):
+    # Offline tests must not consult the user's authenticated gh session.
+    monkeypatch.setenv("GITHUB_TOKEN", "synthetic-test-token")
+
+
 class TestEvalResult:
     """Test the EvalResult dataclass."""
     
@@ -111,24 +117,24 @@ class TestEvalCase:
 class TestEvaluationEngine:
     """Test the EvaluationEngine class."""
     
-    def test_engine_initialization(self):
+    def test_engine_initialization(self, tmp_path):
         """Test engine initialization with API key."""
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test-key'}):
-            engine = EvaluationEngine()
+            engine = EvaluationEngine(work_dir=str(tmp_path))
             
-            assert engine.work_dir == os.path.expanduser("~/code/audit")
+            assert engine.work_dir == str(tmp_path)
             assert engine.claude_api_key == 'test-key'
     
-    def test_engine_initialization_no_api_key(self):
+    def test_engine_initialization_no_api_key(self, tmp_path):
         """Test engine initialization without API key."""
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
-                EvaluationEngine()
+                EvaluationEngine(work_dir=str(tmp_path))
     
-    def test_get_eval_branch_name(self):
+    def test_get_eval_branch_name(self, tmp_path):
         """Test branch name generation."""
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test-key'}):
-            engine = EvaluationEngine()
+            engine = EvaluationEngine(work_dir=str(tmp_path))
             
             case = EvalCase("owner/repo", 123)
             branch_name = engine._get_eval_branch_name(case)
@@ -138,40 +144,37 @@ class TestEvaluationEngine:
     
     @patch('os.path.exists')
     @patch('subprocess.run')
-    def test_clean_worktrees(self, mock_run, mock_exists):
+    def test_clean_worktrees(self, mock_run, mock_exists, tmp_path):
         """Test worktree cleanup."""
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test-key'}):
-            # Mock git auth token call in __init__
             mock_run.side_effect = [
-                Mock(returncode=1, stdout=""),  # gh auth token (fails, no token)
                 Mock(returncode=0),  # prune
                 Mock(returncode=0, stdout=""),  # list (empty)
                 Mock(returncode=0, stdout=""),  # branch --list (empty)
             ]
             
-            engine = EvaluationEngine()
+            engine = EvaluationEngine(work_dir=str(tmp_path))
             
             mock_exists.return_value = True  # repo_path exists
             
             engine._clean_worktrees("/repo/path", "eval-pr-test-123")
             
-            # Should call run four times: gh auth token (in __init__), prune, list, branch --list
-            assert mock_run.call_count == 4
+            # No resource owned by this evaluator exists; never clean by name pattern.
+            mock_run.assert_not_called()
     
     @patch('subprocess.run')
     @patch('os.path.exists')
-    def test_setup_repository_clone(self, mock_exists, mock_run):
+    def test_setup_repository_clone(self, mock_exists, mock_run, tmp_path):
         """Test repository setup with cloning."""
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test-key'}):
             mock_exists.return_value = False  # Repository doesn't exist
             mock_run.side_effect = [
-                Mock(returncode=1, stdout=""),  # gh auth token (fails, no token)
                 Mock(returncode=0),  # git clone
                 Mock(returncode=0),  # git fetch
                 Mock(returncode=0),  # git worktree add
             ]
             
-            engine = EvaluationEngine()
+            engine = EvaluationEngine(work_dir=str(tmp_path))
             
             case = EvalCase("owner/repo", 123)
             success, worktree_path, error = engine._setup_repository(case)
@@ -182,13 +185,12 @@ class TestEvaluationEngine:
     
     @patch('subprocess.run')
     @patch('os.path.exists')
-    def test_setup_repository_existing(self, mock_exists, mock_run):
+    def test_setup_repository_existing(self, mock_exists, mock_run, tmp_path):
         """Test repository setup with existing repository."""
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test-key'}):
             # First call checks base_repo_path, second checks repo_path inside _clean_worktrees
             mock_exists.side_effect = [True, True]
             mock_run.side_effect = [
-                Mock(returncode=1, stdout=""),  # gh auth token (fails, no token)
                 Mock(returncode=0),  # worktree prune
                 Mock(returncode=0, stdout=""),  # worktree list
                 Mock(returncode=0, stdout=""),  # git branch --list
@@ -196,7 +198,7 @@ class TestEvaluationEngine:
                 Mock(returncode=0),  # git worktree add
             ]
             
-            engine = EvaluationEngine()
+            engine = EvaluationEngine(work_dir=str(tmp_path))
             
             case = EvalCase("owner/repo", 123)
             success, worktree_path, error = engine._setup_repository(case)
@@ -205,20 +207,19 @@ class TestEvaluationEngine:
             assert error == ""
     
     @patch('subprocess.run')
-    def test_run_sast_audit_success(self, mock_run):
+    def test_run_sast_audit_success(self, mock_run, tmp_path):
         """Test successful SAST audit run."""
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test-key'}):
-            # Mock gh auth token call first, then the audit
             mock_run.side_effect = [
-                Mock(returncode=1, stdout=""),  # gh auth token (fails, no token)
                 Mock(returncode=0, stdout=json.dumps({
+                    "analysis_summary": {"review_completed": True},
                     "findings": [
                         {"file": "test.py", "line": 10, "severity": "HIGH"}
                     ]
                 }), stderr="")  # SAST audit
             ]
             
-            engine = EvaluationEngine()
+            engine = EvaluationEngine(work_dir=str(tmp_path))
             
             case = EvalCase("owner/repo", 123)
             success, output, parsed, error = engine._run_sast_audit(case, "/repo/path")
@@ -229,15 +230,14 @@ class TestEvaluationEngine:
             assert error is None
     
     @patch('subprocess.run')
-    def test_run_sast_audit_failure(self, mock_run):
+    def test_run_sast_audit_failure(self, mock_run, tmp_path):
         """Test failed SAST audit run."""
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test-key'}):
             mock_run.side_effect = [
-                Mock(returncode=1, stdout=""),  # gh auth token (fails, no token)
                 Mock(returncode=1, stdout="", stderr="Error running audit")  # SAST audit fails
             ]
             
-            engine = EvaluationEngine()
+            engine = EvaluationEngine(work_dir=str(tmp_path))
             
             case = EvalCase("owner/repo", 123)
             success, output, parsed, error = engine._run_sast_audit(case, "/repo/path")
@@ -249,10 +249,10 @@ class TestEvaluationEngine:
     @patch.object(EvaluationEngine, '_setup_repository')
     @patch.object(EvaluationEngine, '_run_sast_audit')
     @patch.object(EvaluationEngine, '_cleanup_worktree')
-    def test_run_evaluation_success(self, mock_cleanup, mock_audit, mock_setup):
+    def test_run_evaluation_success(self, mock_cleanup, mock_audit, mock_setup, tmp_path):
         """Test successful evaluation run."""
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test-key'}):
-            engine = EvaluationEngine()
+            engine = EvaluationEngine(work_dir=str(tmp_path))
             
             mock_setup.return_value = (True, "/worktree/path", "")
             mock_audit.return_value = (
@@ -274,10 +274,10 @@ class TestEvaluationEngine:
             mock_cleanup.assert_called_once()
     
     @patch.object(EvaluationEngine, '_setup_repository')
-    def test_run_evaluation_setup_failure(self, mock_setup):
+    def test_run_evaluation_setup_failure(self, mock_setup, tmp_path):
         """Test evaluation with repository setup failure."""
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test-key'}):
-            engine = EvaluationEngine()
+            engine = EvaluationEngine(work_dir=str(tmp_path))
             
             mock_setup.return_value = (False, "", "Clone failed")
             
@@ -293,14 +293,14 @@ class TestHelperFunctions:
     """Test helper functions."""
     
     @patch.object(EvaluationEngine, 'run_evaluation')
-    def test_run_single_evaluation(self, mock_run):
+    def test_run_single_evaluation(self, mock_run, tmp_path):
         """Test run_single_evaluation helper."""
         with patch.dict(os.environ, {'ANTHROPIC_API_KEY': 'test-key'}):
             mock_result = Mock(spec=EvalResult)
             mock_run.return_value = mock_result
             
             case = EvalCase("owner/repo", 123)
-            result = run_single_evaluation(case, verbose=True)
+            result = run_single_evaluation(case, verbose=True, work_dir=str(tmp_path))
             
             assert result == mock_result
             mock_run.assert_called_once_with(case)

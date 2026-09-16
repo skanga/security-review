@@ -7,11 +7,32 @@ import pytest
 import json
 import os
 import tempfile
+from contextlib import contextmanager
 from unittest.mock import Mock, patch
 from pathlib import Path
 
 from claudecode.github_action_audit import main
 
+
+
+@contextmanager
+def working_directory():
+    """Restore cwd and close handles before Windows removes the test directory."""
+    previous = Path.cwd()
+    cache = Path(__file__).resolve().parents[1] / '.cache'
+    cache.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=cache) as directory:
+        try:
+            os.chdir(directory)
+            yield directory
+        finally:
+            os.chdir(previous)
+
+
+def wrapped_report(findings):
+    return json.dumps({'result': json.dumps({
+        'findings': findings, 'analysis_summary': {'review_completed': True}
+    })})
 
 class TestFullWorkflowIntegration:
     """Test complete workflow scenarios."""
@@ -185,8 +206,7 @@ index 8901234..5678901 100644
         mock_run.side_effect = [version_result, audit_result, audit_result]
         
         # Run the workflow
-        with tempfile.TemporaryDirectory() as tmpdir:
-            os.chdir(tmpdir)
+        with working_directory() as tmpdir:
             
             with patch.dict(os.environ, {
                 'GITHUB_REPOSITORY': 'company/app',
@@ -261,11 +281,10 @@ index 8901234..5678901 100644
         
         mock_run.side_effect = [
             Mock(returncode=0, stdout='claude version 1.0.0', stderr=''),
-            Mock(returncode=0, stdout=json.dumps({"findings": claude_findings}), stderr='')
+            Mock(returncode=0, stdout=wrapped_report(claude_findings), stderr='')
         ]
         
-        with tempfile.TemporaryDirectory() as tmpdir:
-            os.chdir(tmpdir)
+        with working_directory() as tmpdir:
             
             with patch.dict(os.environ, {
                 'GITHUB_REPOSITORY': 'company/app',
@@ -337,11 +356,10 @@ index 8901234..5678901 100644
         # Claude finds no issues
         mock_run.side_effect = [
             Mock(returncode=0, stdout='claude version 1.0.0', stderr=''),
-            Mock(returncode=0, stdout='{"findings": [], "analysis_summary": {"review_completed": true}}', stderr='')
+            Mock(returncode=0, stdout=wrapped_report([]), stderr='')
         ]
         
-        with tempfile.TemporaryDirectory() as tmpdir:
-            os.chdir(tmpdir)
+        with working_directory() as tmpdir:
             
             output_file = Path(tmpdir) / 'output.json'
             
@@ -351,7 +369,7 @@ index 8901234..5678901 100644
                 'GITHUB_TOKEN': 'test-token',
                 'ANTHROPIC_API_KEY': 'test-api-key'
             }):
-                with patch('sys.stdout', open(output_file, 'w')):
+                with open(output_file, 'w') as output_stream, patch('sys.stdout', output_stream):
                     with pytest.raises(SystemExit) as exc_info:
                         main()
                 
@@ -427,11 +445,10 @@ index 0000000..1234567
         # Claude handles it gracefully
         mock_run.side_effect = [
             Mock(returncode=0, stdout='claude version 1.0.0', stderr=''),
-            Mock(returncode=0, stdout='{"findings": []}', stderr='')
+            Mock(returncode=0, stdout=wrapped_report([]), stderr='')
         ]
         
-        with tempfile.TemporaryDirectory() as tmpdir:
-            os.chdir(tmpdir)
+        with working_directory() as tmpdir:
             
             with patch.dict(os.environ, {
                 'GITHUB_REPOSITORY': 'company/app',
@@ -506,11 +523,10 @@ index 1234567..8901234 100644
         
         mock_run.side_effect = [
             Mock(returncode=0, stdout='claude version 1.0.0', stderr=''),
-            Mock(returncode=0, stdout='{"findings": []}', stderr='')
+            Mock(returncode=0, stdout=wrapped_report([]), stderr='')
         ]
         
-        with tempfile.TemporaryDirectory() as tmpdir:
-            os.chdir(tmpdir)
+        with working_directory() as tmpdir:
             
             with patch.dict(os.environ, {
                 'GITHUB_REPOSITORY': 'company/app',

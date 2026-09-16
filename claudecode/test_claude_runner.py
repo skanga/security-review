@@ -177,7 +177,7 @@ class TestSimpleClaudeRunner:
         """Test warning for large prompts."""
         mock_run.return_value = Mock(
             returncode=0,
-            stdout='{"findings": []}',
+            stdout=json.dumps({"result": json.dumps({"findings": [], "analysis_summary": {"review_completed": True}})}),
             stderr=''
         )
         
@@ -201,7 +201,7 @@ class TestSimpleClaudeRunner:
         # First call fails, second succeeds
         mock_run.side_effect = [
             Mock(returncode=1, stdout='', stderr='Temporary error'),
-            Mock(returncode=0, stdout='{"findings": []}', stderr='')
+            Mock(returncode=0, stdout=json.dumps({"result": json.dumps({"findings": [], "analysis_summary": {"review_completed": True}})}), stderr='')
         ]
         
         runner = SimpleClaudeRunner()
@@ -378,6 +378,7 @@ class TestClaudeRunnerEdgeCases:
         nested_output = {
             "type": "result",
             "result": json.dumps({
+                "analysis_summary": {"review_completed": True},
                 "findings": [
                     {"file": "test.py", "line": 1, "severity": "HIGH", "description": "Issue"}
                 ]

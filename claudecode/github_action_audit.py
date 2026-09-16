@@ -17,7 +17,7 @@ import time
 # Import existing components we can reuse
 from claudecode.prompts import get_security_audit_prompt
 from claudecode.findings_filter import FindingsFilter
-from claudecode.json_parser import parse_json_with_fallbacks
+from claudecode.json_parser import parse_json_with_fallbacks, is_completed_report
 from claudecode.constants import (
     EXIT_CONFIGURATION_ERROR,
     DEFAULT_CLAUDE_MODEL,
@@ -189,7 +189,9 @@ class GitHubActionClient:
 class SimpleClaudeRunner:
     """Simplified Claude Code runner for GitHub Actions."""
     
-    def __init__(self, timeout_minutes: Optional[int] = None):
+    def __init__(self, timeout_minutes: Optional[int] = None,
+                 model: Optional[str] = None, environment: Optional[Dict[str, str]] = None,
+                 read_only: bool = False):
         """Initialize Claude runner.
         
         Args:
@@ -199,6 +201,9 @@ class SimpleClaudeRunner:
             self.timeout_seconds = timeout_minutes * 60
         else:
             self.timeout_seconds = SUBPROCESS_TIMEOUT
+        self.model = model or os.environ.get('CLAUDE_MODEL') or DEFAULT_CLAUDE_MODEL
+        self.environment = environment
+        self.read_only = read_only
     
     def run_security_audit(self, repo_dir: Path, prompt: str) -> Tuple[bool, str, Dict[str, Any]]:
         """Run Claude Code security audit.
@@ -224,12 +229,22 @@ class SimpleClaudeRunner:
             cmd = [
                 'claude',
                 '--output-format', 'json',
-                '--model', DEFAULT_CLAUDE_MODEL,
+                '--model', self.model,
                 '--disallowed-tools', 'Bash(ps:*)'
             ]
+            if self.read_only:
+                # Fail on unsupported flags; never fall back to broader access.
+                # Runtime conformance still needs verification before untrusted use.
+                cmd = [
+                    'claude', '-p', '--output-format', 'json', '--model', self.model,
+                    '--restricted', '--bare', '--tools', 'Read,Glob,Grep',
+                    '--setting-sources', '', '--strict-mcp-config',
+                    '--mcp-config', '{"mcpServers":{}}',
+                    '--disallowed-tools', 'mcp__*',
+                ]
             
             # Run Claude Code with retry logic
-            NUM_RETRIES = 3
+            NUM_RETRIES = 1 if self.read_only else 3
             for attempt in range(NUM_RETRIES):
                 result = subprocess.run(
                     cmd,
@@ -237,7 +252,8 @@ class SimpleClaudeRunner:
                     cwd=repo_dir,
                     capture_output=True,
                     text=True,
-                    timeout=self.timeout_seconds
+                    timeout=self.timeout_seconds,
+                    **({'env': self.environment} if self.environment is not None else {})
                 )
                 
                 if result.returncode != 0:
@@ -270,8 +286,16 @@ class SimpleClaudeRunner:
                         attempt == 0):
                         continue  # Retry
                     
-                    # Extract security findings
+                    if (not isinstance(parsed_result, dict)
+                            or parsed_result.get('is_error')
+                            or parsed_result.get('error')
+                            or str(parsed_result.get('subtype', '')).startswith('error')):
+                        return False, "Claude Code returned an error or invalid envelope", {}
+
+                    # Extraction failure must never become a successful empty scan.
                     parsed_results = self._extract_security_findings(parsed_result)
+                    if not is_completed_report(parsed_results):
+                        return False, "Invalid or incomplete security report", parsed_results
                     return True, "", parsed_results
                 else:
                     if attempt == 0:
@@ -296,7 +320,7 @@ class SimpleClaudeRunner:
                 if isinstance(result_text, str):
                     # Try to extract JSON from the result text
                     success, result_json = parse_json_with_fallbacks(result_text, "Claude result text")
-                    if success and result_json and 'findings' in result_json:
+                    if success and isinstance(result_json, dict) and 'findings' in result_json:
                         return result_json
         
         # Return empty structure if no findings found
@@ -387,7 +411,12 @@ def initialize_clients() -> Tuple[GitHubActionClient, SimpleClaudeRunner]:
         raise ConfigurationError(f'Failed to initialize GitHub client: {str(e)}')
     
     try:
-        claude_runner = SimpleClaudeRunner()
+        timeout = os.environ.get('CLAUDE_TIMEOUT') or os.environ.get('CLAUDECODE_TIMEOUT')
+        if timeout is not None:
+            timeout = int(timeout)
+            if timeout <= 0:
+                raise ValueError('Claude timeout must be a positive number of minutes')
+        claude_runner = SimpleClaudeRunner(timeout_minutes=timeout) if timeout is not None else SimpleClaudeRunner()
     except Exception as e:
         raise ConfigurationError(f'Failed to initialize Claude runner: {str(e)}')
         

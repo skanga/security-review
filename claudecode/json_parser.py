@@ -9,6 +9,20 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def is_completed_report(report):
+    """Check the minimum legacy report contract before accepting a clean result."""
+    if not isinstance(report, dict) or report.get('error') or report.get('is_error'):
+        return False
+    summary = report.get('analysis_summary')
+    findings = report.get('findings')
+    return (
+        isinstance(summary, dict)
+        and summary.get('review_completed') is True
+        and isinstance(findings, list)
+        and all(isinstance(finding, dict) for finding in findings)
+    )
+
+
 def extract_json_from_text(text):
     """
     Extract JSON object from text, looking in various formats and locations.
@@ -85,5 +99,5 @@ def parse_json_with_fallbacks(text, error_context=""):
     if error_context:
         error_msg = f"{error_context}: {error_msg}"
     
-    logger.error(f"{error_msg}. Raw output: {repr(text)}")
-    return False, {"error": f"Invalid JSON response -- raw output: {repr(text)}"}
+    logger.error("%s (response content omitted)", error_msg)
+    return False, {"error": "Invalid JSON response"}

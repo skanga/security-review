@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReviewReport 1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "status",
+    "policy_outcome",
+    "snapshot",
+    "findings",
+    "rejected_findings",
+    "coverage",
+    "errors",
+    "runtime_seconds",
+    "schema_version",
+    "backend",
+    "model",
+    "policy",
+    "candidates",
+    "duplicates",
+    "suppressed_findings",
+    "events",
+    "stage",
+    "started_at",
+    "finished_at",
+    "attempt_of",
+    "effective_config",
+    "config_hash",
+    "versions",
+    "usage",
+    "cache",
+    "artifacts"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "enum": [
+        "queued",
+        "running",
+        "completed",
+        "partial",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "policy_outcome": {
+      "enum": [
+        "pass",
+        "fail",
+        "unknown"
+      ]
+    },
+    "snapshot": {
+      "type": "object"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "rejected_findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "required": [
+        "eligible",
+        "assessed",
+        "incomplete"
+      ],
+      "properties": {
+        "eligible": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "assessed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "incomplete": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "stage",
+          "code",
+          "message",
+          "retryable"
+        ]
+      }
+    },
+    "runtime_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "schema_version": {
+      "const": "1.0"
+    },
+    "backend": {},
+    "model": {},
+    "policy": {
+      "type": "object"
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "duplicates": {},
+    "suppressed_findings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/finding"
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "stage": {},
+    "started_at": {},
+    "finished_at": {},
+    "attempt_of": {},
+    "effective_config": {
+      "type": "object"
+    },
+    "config_hash": {},
+    "versions": {
+      "type": "object"
+    },
+    "usage": {},
+    "cache": {
+      "type": "object"
+    },
+    "artifacts": {}
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "required": [
+        "id",
+        "fingerprint",
+        "file",
+        "line",
+        "severity",
+        "description",
+        "locations",
+        "evidence",
+        "introduced_by",
+        "provenance",
+        "validation_status",
+        "confidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^v1:[a-f0-9]{64}$"
+        },
+        "file": {
+          "type": "string"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end_line": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "severity": {
+          "enum": [
+            "HIGH",
+            "MEDIUM",
+            "LOW",
+            "CRITICAL"
+          ]
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "validation_status": {
+          "enum": [
+            "confirmed",
+            "rejected",
+            "uncertain",
+            "unvalidated"
+          ]
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        },
+        "locations": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "provenance": {
+          "type": "object"
+        },
+        "introduced_by": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "completed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "errors": {
+            "maxItems": 0
+          },
+          "coverage": {
+            "properties": {
+              "incomplete": {
+                "maxItems": 0
+              }
+            }
+          },
+          "policy_outcome": {
+            "enum": [
+              "pass",
+              "fail"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
