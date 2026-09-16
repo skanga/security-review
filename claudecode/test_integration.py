@@ -5,6 +5,7 @@ Pytest tests for SAST integration components.
 
 import pytest
 import json
+from unittest.mock import Mock
 
 class TestClaudeCodeAudit:
     """Test the main audit functionality."""
@@ -60,24 +61,27 @@ class TestEnvironmentSetup:
     """Test environment setup and configuration."""
     
     def test_anthropic_api_key_handling(self, monkeypatch):
-        """Test handling of Anthropic API key."""
+        """Test key handling independently of an installed external runtime."""
         from claudecode.github_action_audit import SimpleClaudeRunner
+        from claudecode import github_action_audit
+
+        version_check = Mock(return_value=Mock(returncode=0, stdout='2.1.248', stderr=''))
+        monkeypatch.setattr(github_action_audit.subprocess, 'run', version_check)
         
         runner = SimpleClaudeRunner()
         
         # Test with API key set
         monkeypatch.setenv('ANTHROPIC_API_KEY', 'test-key')
         valid, error = runner.validate_claude_available()
-        # Note: This will fail if claude CLI is not installed, which is OK
-        if not valid and 'not installed' in error:
-            pytest.fail("Claude CLI not installed")
+        assert valid
+        assert error == ''
         
         # Test without API key
         monkeypatch.delenv('ANTHROPIC_API_KEY', raising=False)
         valid, error = runner.validate_claude_available()
-        if 'not installed' not in error:
-            assert not valid
-            assert 'ANTHROPIC_API_KEY' in error
+        assert not valid
+        assert 'ANTHROPIC_API_KEY' in error
+        assert version_check.call_count == 2
 
 
 class TestFilteringIntegration:

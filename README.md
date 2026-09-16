@@ -48,6 +48,7 @@ Legacy `claude-model` and `claudecode-timeout` inputs remain deprecated aliases.
 ## Development
 
 ```text
+python -c "from pathlib import Path; Path('.cache').mkdir(exist_ok=True)"
 python -m pytest -q --basetemp=.cache/pytest
 python -m pip wheel . --no-deps --no-build-isolation --wheel-dir .cache/dist
 python scripts/smoke_package.py .cache/dist/security_review_engine-0.1.0-py3-none-any.whl
