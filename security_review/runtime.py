@@ -108,8 +108,10 @@ def run_process(command, *, cwd=None, env=None, input=None, timeout=30, limit=8 
         for thread in threads:
             thread.join(timeout=1)
         checkpoint()
-        if overflow.is_set() or any(thread.is_alive() for thread in threads):
-            raise ValueError("Subprocess output exceeded bounds or pipes remained open")
+        if overflow.is_set():
+            raise ValueError("Subprocess output limit exceeded")
+        if any(thread.is_alive() for thread in threads):
+            raise ValueError("Subprocess pipes remained open")
         return subprocess.CompletedProcess(command, process.returncode, bytes(chunks[0]), bytes(chunks[1]))
     finally:
         if os.name != "nt":

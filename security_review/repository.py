@@ -7,7 +7,7 @@ from fnmatch import fnmatchcase
 import hashlib
 import json
 import os
-from pathlib import PurePosixPath, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import subprocess
 import tempfile
 import time
@@ -225,6 +225,9 @@ def _working_files(request, reader, index_files):
 def capture(request: ReviewRequest, deadline: float | None = None) -> Snapshot:
     deadline = deadline or time.monotonic() + request.timeout_seconds
     reader = GitReader(request.repository, deadline)
+    root = Path(os.fsdecode(reader.run("rev-parse", "--show-toplevel")).strip()).resolve()
+    if root != request.repository:
+        raise ValueError("Source directory must be the repository root")
     if request.mode == "revisions":
         snapshot = _capture_revisions(request, deadline)
         base_files, head_files = dict(snapshot.base_files), dict(snapshot.head_files)

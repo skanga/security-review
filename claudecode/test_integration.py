@@ -109,4 +109,3 @@ class TestFilteringIntegration:
         assert stats.kept_findings == 1  # Only SQL injection
         assert stats.hard_excluded == 1  # Rate limiting
         assert stats.claude_excluded == 0  # No Claude filtering
-    

@@ -8,6 +8,16 @@ from test_standalone import history, git, FakeBackend, ConfirmingValidator
 from security_review import ReviewRequest, review
 
 
+@pytest.mark.parametrize("mode", ["revisions", "staged", "unstaged", "working_tree"])
+def test_source_directory_cannot_silently_select_parent_repository(history, mode):
+    from security_review.repository import capture
+    repo, _, head = history
+    nested = repo / "not-a-repository"
+    nested.mkdir()
+    with pytest.raises(ValueError, match="repository root"):
+        capture(ReviewRequest(nested, head, head, mode=mode))
+
+
 def test_trusted_config_rejects_unknown_and_resolves_paths(tmp_path):
     from security_review.config import resolve_config
     path = tmp_path / "config.json"

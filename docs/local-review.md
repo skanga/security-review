@@ -145,7 +145,7 @@ Claude runtime availability is an additional platform constraint; core support d
 
 ## Troubleshooting and current release limits
 
-- `source` failure: verify explicit refs, local history/object availability, Git ownership, file limits, or GitHub permissions. Local capture disables partial-clone lazy fetching; fetch missing history separately. The engine never adds Git ownership exceptions.
+- `source` failure: provide the repository root, then verify explicit refs, local history/object availability, Git ownership, file limits, or GitHub permissions. Subdirectories are rejected to prevent selecting a parent repository silently. Local capture disables partial-clone lazy fetching; fetch missing history separately. The engine never adds Git ownership exceptions.
 - `preflight` failure: inspect `backends list`, runtime version, `ANTHROPIC_API_KEY`, configured models and `cloud_allowed`. Account/model access is finally established by the actual selected-model request.
 - Incomplete coverage: inspect coverage reasons. Binary/non-UTF-8, LFS pointer, link/submodule, denied and oversized changed files are not silently counted as reviewed.
 - State reservation: another run owns the same input. Active leases are not stolen; expired owners cannot overwrite a successor's result.
