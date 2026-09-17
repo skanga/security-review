@@ -1,5 +1,6 @@
 """Wire-contract validation used on persisted and externally supplied reports."""
 import json
+import re
 
 
 def validate_report(value):
@@ -40,6 +41,8 @@ def validate_report(value):
         for key in ("id", "fingerprint", "description", "category", "exploit_scenario", "recommendation"):
             if not isinstance(finding.get(key), str) or not finding[key]:
                 raise ValueError(f"Invalid finding {key}")
+        if not re.fullmatch(r"v[12]:[a-f0-9]{64}", finding["fingerprint"]):
+            raise ValueError("Invalid or unsupported finding fingerprint")
         confidence = finding.get("confidence")
         if confidence is not None and (type(confidence) not in {int, float} or not 0 <= confidence <= 1):
             raise ValueError("Invalid finding confidence")

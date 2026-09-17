@@ -37,6 +37,12 @@ security-review scan --pr owner/repo#123 --config /trusted/review.toml --output 
 
 Untracked files are excluded unless explicitly included in a working-copy mode. Git-ignored files stay excluded. Working modes detect changes during capture and fail with a retry requirement; later edits cannot alter captured evidence. They never stage, checkout, commit, or change branches.
 
+Change selection is separate from content availability. Staged reviews compare object IDs and modes even for unavailable entries. Working-copy reviews compare captured contents where permitted and use cached index/filesystem metadata for unavailable files. An unchanged denied or oversized file does not expand review scope; changed entries or entries whose state cannot be established safely retain incomplete coverage. Denied file contents are never opened to prove that they are unchanged.
+
+Working-copy comparisons apply Git text/EOL rules to captured bytes while retaining the original bytes and content IDs as evidence. Clean CRLF checkouts do not appear modified, and line-ending conversion does not create artificial added lines in a real change's diff. Repository, info, global, and system attribute sources are checked for denied paths, links, and size limits before lookup. Unavailable attributes prevent normalization for affected paths; Git versions that cannot enumerate attribute sources conservatively use raw comparisons. Custom clean/process filters are never executed. This follows Git's [text conversion rules](https://git-scm.com/docs/gitattributes#_text); metadata-only inspection avoids the content checks performed by [Git's modified-file implementation](https://github.com/git/git/blob/v2.50.1/builtin/ls-files.c).
+
+Unchanged links, including regular-file checkouts under `core.symlinks=false`, stay out of scope when metadata establishes equality. Initialized submodules use HEAD, index, and tracked-file metadata to detect changes without reading nested source contents. Uncertain submodule state remains selected as unavailable; capture never initializes submodules.
+
 PR source acquisition uses GitHub REST objects, paginates files and resolves immutable base/head content. It does not execute repository Git helpers, initialize submodules, hydrate LFS, or rely on a matching local checkout. `GITHUB_SOURCE_TOKEN` supplies source access, with `GITHUB_TOKEN` as a compatibility fallback. Public access without a token is possible subject to GitHub limits.
 
 ## Trusted configuration
@@ -70,6 +76,8 @@ exclude_categories = []
 
 The `generic` profile has no category exclusions. The versioned `legacy` profile retains named legacy scope categories for comparisons, with language/HTML assumptions removed. Accepted-risk suppressions match an exact finding fingerprint and include `id`, `reason`, `source`, optional `owner`, and optional ISO `expires` date. They remain separate from validation decisions.
 
+New suppressions require a `v2:` fingerprint. A `v1:` suppression is rejected because it can match distinct locations with identical source text. To migrate, temporarily remove the old rule, rescan, inspect the intended finding location, then replace the rule's fingerprint with that finding's `v2:` value. Retain the rule's owner, reason, and expiry. Suppressions apply through the expiry date using one local calendar date captured at the start of each run, including cache hits.
+
 ## Results and exit codes
 
 Reports contain execution status, policy outcome, snapshot identity/content manifests, finding evidence references, validation provenance, structured events/errors, effective configuration/policy hashes, and coverage lists/reasons/counts. Unknown usage is null. Where Claude reports token counts, investigation usage is recorded separately from unknown validation usage.
@@ -98,6 +106,8 @@ security-review publish --report review.json --pr owner/repo#123
 
 State storage is opt-in through `--state-dir`/`cache_dir`. SQLite stores stage/report state and expiring ownership leases transactionally. Only validated completed reports can be reused; snapshot, full working-copy context, policy/instructions, model/backend versions and access constraints participate in identity. `--no-cache` bypasses reuse. Cache hits have a new run ID plus original-run provenance. Cleanup deletes only rows in the selected engine database; retention is explicit, with 30 days as the cleanup command default. State directories are single-user/private, not a shared trust boundary.
 
+The location-identity repair changes the cache-key format, so older reports remain inspectable but cannot be reused for a new review: earlier deduplication may already have lost candidates. Compatible cached reports retain their validation results while reevaluating suppression expiry and recomputing current policy partitions and outcome. No model call is required to expire a cached suppression.
+
 Publication reads a saved report; it never reruns investigation. `GITHUB_PUBLISH_TOKEN` supplies publication access. The report must be bound to the target PR. Publication checks current head before writes, uses reviewed commit/side/line locations, and falls back to summary comments for non-inline locations. Tool markers and authenticated author identity deduplicate findings per revision. It never edits another author's comments or infers resolution from a partial review. A stale/failed publication has its own result; scan status remains unchanged.
 
 ## Python API and extensions
@@ -119,13 +129,19 @@ report = review(request, cancellation=token, on_event=lambda event: print(event)
 
 Adapters can be injected directly into `review` or explicitly registered through `Registry`. Sources, investigators, validators, policies and publishers have separate registrations. No reviewed-directory module discovery or automatic plugin installation occurs. Installed adapter code is trusted executable code.
 
-Public Python exports are in `security_review.__all__`. Version `1.0` wire schemas are packaged under `security_review/schemas`; unknown incompatible report/state versions fail loading. Canonical wire severities use uppercase values for compatibility. Engine-generated fingerprints hash normalized evidence, category and path, rather than line number or prose alone. Renaming a file or changing evidence can change identity; cross-rename/rebase identity is not guaranteed.
+Public Python exports are in `security_review.__all__`. Version `1.0` wire schemas are packaged under `security_review/schemas`; unknown incompatible report/state versions fail loading. Canonical wire severities use uppercase values for compatibility. New `v2:` fingerprints hash normalized evidence, category, path, base/head side, and start/end lines. Identical calls at separate locations remain independently validatable and publishable; exact repeated candidates at one location still deduplicate. Moving lines, renaming files, or changing evidence can change identity. Supported historical `v1:` reports remain readable, while new suppression configuration requires `v2:` identities.
+
+Supplying a validator explicitly preserves that instance even when the engine selects the default backend. Disabling validation skips validator preflight and calls. Supplying a custom backend without a required validator retains the explicit missing-validator failure behavior.
 
 ## GitHub Action migration
 
 The Action now installs the package and calls `python -I -m security_review.action` from the runner's temporary directory. It reviews every PR revision and exposes `scan-status`, `policy-outcome`, `findings-count`, `results-file`, and `publication-status`. Output paths are absolute paths in the caller's workspace. `ci-mode=blocking` is the default; `advisory` retains failure/status artifacts while leaving the scan step successful. Artifact-write failures always return an error.
 
 New inputs: `model`, `validation-model`, `backend`, `config`, `timeout-seconds`, `ci-mode`. Legacy `claude-model` and `claudecode-timeout` remain aliases; conflicting values fail. `run-every-commit` is deprecated because every revision now runs. Existing instruction-file inputs remain available, but PR runs reject files inside the reviewed workspace; supply them from a separate trusted checkout/location.
+
+Empty model/backend/timeout inputs leave configuration resolution in charge. Explicit Action inputs override supported environment values and the selected configuration file. An investigation-model override does not replace an independently configured validation model; the investigation model is used as a fallback only if no validation model was selected.
+
+Publication errors stay in the publication result and do not invalidate a completed scan report. Failure to write the publication receipt, canonical report, or workflow outputs always returns exit `2`, including advisory mode. Other usable outputs are still attempted. If the canonical report could not be written, `results-file` is empty and the recovery report does not claim a successful artifact. A successful publication remains `published` if only writing its receipt failed; the Action exits with an artifact error and prints the receipt to stderr.
 
 Source reading requires repository contents/PR read access; publication additionally needs pull-request write access. Fork PRs often have no provider secret or publication permission. Such missing capabilities produce explicit failure; the implementation does not switch to `pull_request_target` or another elevated execution workaround. The bundled live-review workflow runs only same-repository PRs and checks out the trusted base for its Action implementation. The offline test workflow runs for all PRs without provider credentials.
 

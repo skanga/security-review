@@ -4,6 +4,7 @@ from datetime import date
 from fnmatch import fnmatchcase
 import hashlib
 import json
+import re
 
 SEVERITIES = ("LOW", "MEDIUM", "HIGH", "CRITICAL")
 LEGACY_CATEGORIES = ("denial_of_service", "rate_limiting", "resource_leak", "open_redirect", "regex_injection")
@@ -26,6 +27,10 @@ class Suppression:
     def __post_init__(self):
         if not all(isinstance(v, str) and v for v in (self.id, self.fingerprint, self.reason, self.source)):
             raise ValueError("Suppression requires id, fingerprint, reason and source")
+        if self.fingerprint.startswith("v1:"):
+            raise ValueError("v1 suppression fingerprint is ambiguous; rescan and select the intended v2 finding")
+        if not re.fullmatch(r"v2:[a-f0-9]{64}", self.fingerprint):
+            raise ValueError("Suppression requires a valid v2 fingerprint")
         if self.expires:
             date.fromisoformat(self.expires)
 
@@ -72,7 +77,8 @@ class Policy:
     def excluded(self, path):
         return next((pattern for pattern in self.exclude_paths if fnmatchcase(path, pattern)), None)
 
-    def evaluate(self, finding):
+    def evaluate(self, finding, *, on_date=None):
+        on_date = on_date or date.today()
         categories = self.exclude_categories + (LEGACY_CATEGORIES if self.profile == "legacy" else ())
         reason = None
         if finding.get("category") in categories:
@@ -80,7 +86,7 @@ class Policy:
                       "source": self.source}
         for rule in self.suppressions:
             if rule.fingerprint == finding["fingerprint"] and (
-                rule.expires is None or date.fromisoformat(rule.expires) >= date.today()
+                rule.expires is None or date.fromisoformat(rule.expires) >= on_date
             ):
                 reason = {"rule": rule.id, "reason": rule.reason, "source": rule.source,
                           "owner": rule.owner, "expires": rule.expires}

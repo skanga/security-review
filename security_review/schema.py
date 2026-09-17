@@ -11,7 +11,7 @@ def schemas():
     objects = {"type": "array", "items": {"type": "object"}}
     finding = {"type": "object", "required": ["id", "fingerprint", "file", "line", "severity", "description",
                 "locations", "evidence", "introduced_by", "provenance", "validation_status", "confidence"],
-               "properties": {"id": text, "fingerprint": {"type": "string", "pattern": "^v1:[a-f0-9]{64}$"},
+               "properties": {"id": text, "fingerprint": {"type": "string", "pattern": "^v[12]:[a-f0-9]{64}$"},
                 "file": text, "line": {"type": "integer", "minimum": 1}, "end_line": {"type": "integer", "minimum": 1},
                 "severity": {"enum": ["HIGH", "MEDIUM", "LOW", "CRITICAL"]}, "description": {"type": "string", "minLength": 1},
                 "validation_status": {"enum": ["confirmed", "rejected", "uncertain", "unvalidated"]},

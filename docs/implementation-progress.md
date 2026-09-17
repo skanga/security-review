@@ -67,3 +67,24 @@ Real runner failures led to corrections before this passing run: create the test
 2. Run a GitHub test PR with installation-token permissions to verify the real API source/publication lifecycle. Transport fixtures exercise those contracts locally; no external comment was sent.
 
 The candidate and release-check record have been committed and pushed at the user's request. No deployments, paid model reviews or PR comment publication were performed. New native providers and quality comparisons are M2; MCP/framework integration and SARIF are M3.
+
+## Code review remediation
+
+The approved review of `d6e9961` identified seven defects. Their fixes and 71 additional regression cases are implemented locally. The [remediation plan and mapping](code-review-remediation-plan.md#implementation-record) links each defect to its implementation and coverage.
+
+- Distinct call sites now have separate `v2:` fingerprints. Old cache identities are invalidated; historical reports remain readable. Existing `v1:` suppressions require the [documented migration](local-review.md#trusted-configuration).
+- Cache hits reevaluate retained and suppressed findings against one captured policy date, preserving validation and rejected candidates.
+- Working-copy selection distinguishes unavailable content from actual changes, uses metadata for opaque paths, and applies guarded Git EOL rules while retaining raw evidence.
+- Action artifact failures return exit 2 in both CI modes and preserve valid scan/publication results. Unset Action inputs preserve configured timeouts and independent models. Explicitly injected validators are retained.
+- Independent review added regressions for initialized/dirty submodules, regular-file symlink checkouts, and denied attribute sources, including equivalent parent-traversal paths.
+
+Local verification for these repairs (Windows, Python 3.13.7):
+
+- `python -m pytest -q --basetemp=.cache/remediation-final --tb=short`: **360 passed** in 425.53 seconds, with no skips.
+- `bun test` in `scripts/`: **11 passed**.
+- Generated schemas pass Draft 2020-12 schema validation; schema parity and report round trips are covered by the Python suite.
+- `python -m pip wheel . --no-deps --no-build-isolation --no-index --wheel-dir .cache/remediation-dist`: passed.
+- `python scripts/smoke_package.py .cache/remediation-dist/security_review_engine-0.1.0-py3-none-any.whl`: passed offline installation, optional-dependency absence, packaged schema, and package-shadowing checks.
+- `git diff --check`: passed.
+
+The earlier 13-job platform result applies to the historical commit named above. This repair set has not yet been verified through that matrix. Live Claude conformance and real GitHub PR publication remain unverified; no provider requests or external comments were needed for the repairs.

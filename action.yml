@@ -10,7 +10,7 @@ inputs:
     default: ''
   backend:
     description: Installed investigation adapter
-    default: claude-code
+    default: ''
   config:
     description: Explicit trusted configuration outside the reviewed workspace
     default: ''

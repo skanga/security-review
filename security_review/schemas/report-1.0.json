@@ -180,7 +180,7 @@
         },
         "fingerprint": {
           "type": "string",
-          "pattern": "^v1:[a-f0-9]{64}$"
+          "pattern": "^v[12]:[a-f0-9]{64}$"
         },
         "file": {
           "type": "string"

@@ -1,6 +1,6 @@
 """Shared review lifecycle: immutable inputs, candidate validation, policy and storage."""
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import math
 import time
 from typing import Protocol
@@ -57,7 +57,8 @@ def _candidate(value, snapshot, index=0):
         revision = f"snapshot:{snapshot.snapshot_id}:{side}"
     data = (snapshot.base_files if side == "base" else snapshot.head_files)[path]
     evidence_hash = digest(" ".join(content.splitlines()[line - 1:end]))
-    fingerprint = "v1:" + digest({"path": path, "category": finding["category"], "evidence": evidence_hash})
+    fingerprint = "v2:" + digest({"path": path, "side": side, "start_line": line, "end_line": end,
+                                  "category": finding["category"], "evidence": evidence_hash})
     finding.update(id=f"finding-{index + 1}", fingerprint=fingerprint, file=path, line=line, end_line=end,
                    severity=severity.upper(), side=side, discovery_confidence=confidence, confidence=None,
                    validation_status="unvalidated", validation_reason="Validation not yet performed",
@@ -72,13 +73,17 @@ def review(request: ReviewRequest, backend: InvestigationBackend | None = None,
            validator: FindingValidator | None = None, *, source=None, cancellation=None,
            on_event=None, clock=time.monotonic, registry=None) -> ReviewReport:
     started = clock()
+    policy_date = date.today()
     request = replace(request, model=request.model or DEFAULT_MODEL,
                       validation_model=request.validation_model or request.model or DEFAULT_MODEL)
     if backend is None:
         from .registry import Registry
         registry = registry or Registry()
         backend = registry.create("backend", request.backend)
-        validator = registry.create("validator", request.validator) if request.policy.validation_required else None
+        if validator is None and request.policy.validation_required:
+            validator = registry.create("validator", request.validator)
+    if not request.policy.validation_required:
+        validator = None
     context = Execution(started + request.timeout_seconds, cancellation or CancellationToken(), clock)
     context_handle = execution.set(context)
     report = ReviewReport(str(uuid.uuid4()), status="queued", backend=type(backend).__name__, model=request.model,
@@ -137,7 +142,8 @@ def review(request: ReviewRequest, backend: InvestigationBackend | None = None,
                     capabilities = adapter.preflight(remaining_request())
                     report.versions[type(adapter).__name__] = capabilities
         cache_config = {key: value for key, value in report.effective_config.items() if key not in {"no_cache", "cache_dir"}}
-        cache_key = digest({"snapshot": snapshot.snapshot_id, "request": cache_config,
+        # Older cached reports may already have discarded distinct call sites.
+        cache_key = digest({"format": 2, "snapshot": snapshot.snapshot_id, "request": cache_config,
                             "versions": report.versions, "backend": type(backend).__module__ + "." + type(backend).__qualname__,
                             "validator": type(validator).__module__ + "." + type(validator).__qualname__})
         if store:
@@ -220,11 +226,14 @@ def review(request: ReviewRequest, backend: InvestigationBackend | None = None,
         error(report.stage, exc)
         report.status = "partial" if report.findings or report.coverage["assessed"] else "failed"
     finally:
-        for finding in list(report.findings):
-            request.policy.evaluate(finding)
+        policy_candidates = report.findings + report.suppressed_findings
+        report.findings, report.suppressed_findings = [], []
+        for finding in policy_candidates:
+            request.policy.evaluate(finding, on_date=policy_date)
             if finding["policy_decision"] == "suppressed":
-                report.findings.remove(finding)
                 report.suppressed_findings.append(finding)
+            else:
+                report.findings.append(finding)
         report.candidates = report.findings + report.rejected_findings + report.suppressed_findings
         blocks = any(f["severity"] in request.blocking_severities and f["validation_status"] == "confirmed"
                      and f["confidence"] >= request.policy.minimum_confidence for f in report.findings)
